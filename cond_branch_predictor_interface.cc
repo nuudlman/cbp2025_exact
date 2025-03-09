@@ -18,8 +18,11 @@
 
 #include "lib/sim_common_structs.h"
 #include "cbp2016_tage_sc_l.h"
-#include "my_cond_branch_predictor.h"
+#include "EXACTPredictor.h"
 #include <cassert>
+#include <my_cond_branch_predictor.h>
+
+static EXACTPredictor exact_predictor = EXACTPredictor();
 
 //
 // beginCondDirPredictor()
@@ -31,7 +34,6 @@ void beginCondDirPredictor()
 {
     // setup sample_predictor
     cbp2016_tage_sc_l.setup();
-    cond_predictor_impl.setup();
 }
 
 //
@@ -43,11 +45,18 @@ void beginCondDirPredictor()
 //
 bool get_cond_dir_prediction(uint64_t seq_no, uint8_t piece, uint64_t pc, const uint64_t pred_cycle)
 {
-    const bool tage_sc_l_pred = cbp2016_tage_sc_l.predict(seq_no, piece, pc);
-    const bool my_prediction = cond_predictor_impl.predict(seq_no, piece, pc, tage_sc_l_pred);
-    return my_prediction;
+    switch (exact_predictor.choose(seq_no, piece, pc, pred_cycle))
+    {
+        case PredictorChoice::Tage:
+            return cbp2016_tage_sc_l.predict(seq_no, piece, pc);
+        case PredictorChoice::EXACT:
+            return false; // TODO
+        default:
+            unreachable();
+    }
 }
 
+static int br_type(InstClass inst) __attribute((pure));
 //
 // spec_update(uint64_t seq_no, uint8_t piece, uint64_t pc, InstClass inst_class, const bool resolve_dir, const bool pred_dir, const uint64_t next_pc)
 // 
@@ -59,34 +68,14 @@ bool get_cond_dir_prediction(uint64_t seq_no, uint8_t piece, uint64_t pc, const 
 void spec_update(uint64_t seq_no, uint8_t piece, uint64_t pc, InstClass inst_class, const bool resolve_dir,
                  const bool pred_dir, const uint64_t next_pc)
 {
-    assert(is_br(inst_class));
-    int br_type = 0;
-    switch (inst_class)
-    {
-        case InstClass::uncondDirectBranchInstClass:
-        case InstClass::callDirectInstClass:
-            br_type = 0;
-            break;
-        case InstClass::condBranchInstClass:
-            br_type = 1;
-            break;
-        case InstClass::uncondIndirectBranchInstClass:
-        case InstClass::callIndirectInstClass:
-        case InstClass::ReturnInstClass:
-            br_type = 2;
-            break;
-        default:
-            unreachable();
-    }
-
+    int const ty = br_type(inst_class);
     if (inst_class == InstClass::condBranchInstClass)
     {
-        cbp2016_tage_sc_l.history_update(seq_no, piece, pc, br_type, resolve_dir, next_pc);
-        cond_predictor_impl.history_update(seq_no, piece, pc, resolve_dir, next_pc);
+        cbp2016_tage_sc_l.history_update(seq_no, piece, pc, ty, resolve_dir, next_pc);
     }
     else
     {
-        cbp2016_tage_sc_l.TrackOtherInst(pc, br_type, resolve_dir, next_pc);
+        cbp2016_tage_sc_l.TrackOtherInst(pc, ty, resolve_dir, next_pc);
     }
 }
 
@@ -121,7 +110,6 @@ void notify_instr_execute_resolve(uint64_t seq_no, uint8_t piece, uint64_t pc, c
             const bool _resolve_dir = _exec_info.taken.value();
             const uint64_t _next_pc = _exec_info.next_pc;
             cbp2016_tage_sc_l.update(seq_no, piece, pc, _resolve_dir, pred_dir, _next_pc);
-            cond_predictor_impl.update(seq_no, piece, pc, _resolve_dir, pred_dir, _next_pc);
         }
         else
         {
@@ -140,6 +128,7 @@ void notify_instr_execute_resolve(uint64_t seq_no, uint8_t piece, uint64_t pc, c
 void notify_instr_commit(uint64_t seq_no, uint8_t piece, uint64_t pc, const bool pred_dir,
                          const ExecuteInfo& _exec_info, const uint64_t commit_cycle)
 {
+    // TODO: update exact state
 }
 
 //
@@ -151,5 +140,25 @@ void notify_instr_commit(uint64_t seq_no, uint8_t piece, uint64_t pc, const bool
 void endCondDirPredictor()
 {
     cbp2016_tage_sc_l.terminate();
-    cond_predictor_impl.terminate();
 }
+
+
+static int br_type(InstClass const inst)
+{
+    assert(is_br(inst));
+    switch (inst)
+    {
+    case InstClass::uncondDirectBranchInstClass:
+    case InstClass::callDirectInstClass:
+        return 0;
+    case InstClass::condBranchInstClass:
+        return 1;
+    case InstClass::uncondIndirectBranchInstClass:
+    case InstClass::callIndirectInstClass:
+    case InstClass::ReturnInstClass:
+        return 2;
+    default:
+        unreachable();
+    }
+}
+

@@ -19,4 +19,5 @@ cbp = static_library('cbp', [
 executable('cbp2025_exact',
            'cond_branch_predictor_interface.cc',
            'my_cond_branch_predictor.cc',
+            'EXACTPredictor.cpp',
            install : true, link_with: cbp)

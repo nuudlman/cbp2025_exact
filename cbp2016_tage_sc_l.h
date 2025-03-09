@@ -1,6 +1,10 @@
 #ifndef _TAGE_PREDICTOR_H_
 #define _TAGE_PREDICTOR_H_
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wall"
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
@@ -1734,4 +1738,5 @@ class CBP2016_TAGE_SC_L
 #undef UINT64
 
 #endif
+#pragma GCC diagnostic pop
 static CBP2016_TAGE_SC_L cbp2016_tage_sc_l;
